@@ -1,0 +1,46 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html,
+  body,
+  #root {
+    @apply h-full;
+  }
+  body {
+    @apply bg-bg text-text font-sans antialiased;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  button {
+    @apply font-sans;
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl
+           bg-primary text-white font-semibold shadow-card
+           transition-all duration-200 hover:brightness-110 active:scale-[0.98]
+           disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:brightness-100;
+  }
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg
+           text-subtext hover:text-text hover:bg-black/5 transition;
+  }
+  .card {
+    @apply bg-white rounded-2xl shadow-card p-6;
+  }
+  .input-field {
+    @apply w-full px-4 py-3 rounded-xl border border-black/10 bg-white
+           text-text placeholder:text-subtext/70
+           focus:outline-none focus:border-primary focus:ring-4 focus:ring-primary/15
+           transition;
+  }
+  .scenario-chip {
+    @apply flex-1 px-4 py-4 rounded-xl border-2 font-semibold text-left
+           transition-all duration-200 hover:-translate-y-0.5 hover:shadow-card
+           active:scale-[0.98];
+  }
+}
