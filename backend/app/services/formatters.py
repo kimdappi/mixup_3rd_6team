@@ -36,3 +36,24 @@ def format_won(amount) -> str:
     if man == 0:
         return f"{eok}억"
     return f"{eok}억 {man:,}만원"
+
+
+def format_won_from_origin(amount) -> str:
+    """원 단위 정수를 한국어 자연 표기로 변환.
+
+    `format_won`은 만원 단위를 받는 데 비해, 이 함수는 원 단위를 받는다.
+    등기부등본의 채권최고액(예: 1_200_000_000원)처럼 원 단위 데이터에 사용.
+
+    예시:
+        None         -> "정보 없음"
+        0            -> "0원"
+        1_200_000_000 -> "12억"
+        1_300_500_000 -> "13억 50만원"   (1,300,500,000원 = 130050만원 = 13억 50만원)
+    """
+    if amount is None:
+        return "정보 없음"
+    try:
+        amount_in_man = int(amount) // 10000
+    except (ValueError, TypeError):
+        return "정보 없음"
+    return format_won(amount_in_man)

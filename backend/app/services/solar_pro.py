@@ -24,7 +24,7 @@ import re
 from openai import OpenAI, OpenAIError
 
 from app.core.config import SOLAR_PRO_API_KEY
-from app.services.formatters import format_won
+from app.services.formatters import format_won, format_won_from_origin
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +75,17 @@ def _call_solar(system: str, user: str, temperature: float = 0.3) -> str:
         timeout=10,
     )
     return (resp.choices[0].message.content or "").strip()
+
+
+def _strip_markdown_emphasis(text: str) -> str:
+    """LLM 응답에서 마크다운 강조 표기(`**bold**`, `__bold__`)를 제거.
+
+    UI가 plain text로 렌더되는 환경에서 `**시세 판정**` 같은 raw 마커가 그대로
+    노출되는 문제를 차단한다. 짝이 안 맞아도 그냥 모두 제거 (안전한 쪽).
+    """
+    if not text:
+        return text
+    return text.replace("**", "").replace("__", "")
 
 
 # ---------------------------------------------------------------------------
@@ -240,6 +251,7 @@ def interpret_saju(context: dict) -> str:
         "아래 [근거 데이터]의 장소 이름과 거리만 사용하세요. "
         "데이터에 없는 지명·랜드마크·거리를 절대 만들어내지 마세요. "
         "데이터에 없는 정보는 언급하지 마세요. "
+        "마크다운 강조 표기(`**굵게**`, `__굵게__`)를 절대 사용하지 마세요. 순수 문장으로만 답하세요. "
         "2~3문장, 친근한 존댓말로 답하고, 마지막에 이모지 하나 정도는 괜찮습니다."
     )
 
@@ -259,7 +271,7 @@ def interpret_saju(context: dict) -> str:
     )
 
     try:
-        result = _call_solar(system, user)
+        result = _strip_markdown_emphasis(_call_solar(system, user))
         if not _validate_saju_grounding(result, allowed_places):
             logger.warning("[Solar grounding fail/saju] %s", result[:100])
             return _stub_interpret(context)
@@ -371,6 +383,8 @@ def generate_diagnosis_summary(context: dict) -> str:
         "절대 하지 마세요.\n"
         "5. 일반론('시장 상황은 변동성이 있으니', '부동산은 신중하게' 등)을 쓰지 마세요.\n"
         "6. 숫자는 콤마 없이 그대로 적어주세요. (예: 30000만원, 300000000원)\n"
+        "7. 마크다운 강조 표기(`**굵게**`, `__굵게__`)를 절대 사용하지 마세요. "
+        "항목 제목도 굵게 처리하지 말고 평문으로만 쓰세요.\n"
         "\n"
         "출력 형식:\n"
         "다음 4개 항목을 순서대로, 각 항목당 1~2문장으로 풀어주세요.\n"
@@ -427,7 +441,7 @@ def generate_diagnosis_summary(context: dict) -> str:
     )
 
     try:
-        result = _call_solar(system, user)
+        result = _strip_markdown_emphasis(_call_solar(system, user))
 
         # 1차: 숫자 grounding 검증
         if not _validate_diagnosis_grounding(result, context):
@@ -514,3 +528,149 @@ def _stub_diagnosis_summary(context: dict) -> str:
         line4 = "제시 보증금 ±10% 이내 비슷한 매물은 표본에 없습니다."
 
     return f"{line1}\n{line2}\n{line3}\n{line4}"
+
+
+# ---------------------------------------------------------------------------
+# v4: 등기부등본 분석 결과 자연어 풀이
+# ---------------------------------------------------------------------------
+
+# 등기부 risk_level → 사용자에게 표시할 1줄 (LLM 실패 시 stub 1번째 줄)
+_REGISTRY_LEVEL_LINES: dict[str, str] = {
+    "safe":      "등기부상 권리관계에서 특이사항이 확인되지 않았어요.",
+    "caution":   "등기부에서 확인이 필요한 항목이 있어요.",
+    "high":      "등기부에서 주의 깊게 봐야 할 항목이 확인됐어요.",
+    "very_high": "등기부에서 중요한 위험 신호가 확인됐어요.",
+}
+_REGISTRY_LEVEL_DEFAULT = "등기부 분석 데이터가 부족해요."
+
+
+def _validate_registry_grounding(text: str, context: dict) -> bool:
+    """등기부 응답에 context에 없는 3자리 이상 숫자가 등장하면 차단.
+
+    허용:
+      - 채권최고액 (원 / 만원 / 억 / 억-만 분리)
+      - 사용자 입력 전세금 (동일)
+      - 비율의 정수 백분율 (예: 0.92 → "92")
+    """
+    info = context.get("info") or {}
+    risk = context.get("risk_result") or {}
+
+    allowed: set[str] = set()
+    _add_numeric(allowed, info.get("max_claim_amount"))
+    _add_numeric(allowed, context.get("user_deposit_won"))
+    # 비율 → 정수 백분율
+    ratio = risk.get("claim_to_deposit_ratio")
+    if ratio is not None:
+        try:
+            allowed.add(str(int(round(float(ratio) * 100))))
+        except (ValueError, TypeError):
+            pass
+
+    text_normalized = text.replace(",", "")
+    found = re.findall(r"\d{3,}", text_normalized)
+    for n in found:
+        if n not in allowed:
+            return False
+    return True
+
+
+def interpret_registry(context: dict) -> str:
+    """등기부 분석 결과를 자연어로 풀기 (v4).
+
+    context = {
+        "info": RegistryInfo.to_dict(),
+        "risk_result": RegistryRiskResult.to_dict(),
+        "user_deposit_won": int,
+    }
+    """
+    if not is_available():
+        return _stub_interpret_registry(context)
+
+    info = context.get("info", {}) or {}
+    risk = context.get("risk_result", {}) or {}
+    user_deposit = context.get("user_deposit_won")
+
+    system = (
+        "당신은 부동산 등기부등본 분석 결과를 친근하게 풀어 설명하는 도우미입니다.\n"
+        "\n"
+        "다음 규칙을 반드시 지키세요:\n"
+        "1. 아래 [근거 데이터]의 숫자, 코드, 사실만 사용하세요.\n"
+        "2. 데이터에 없는 금액·인명·주소를 절대 만들어내지 마세요.\n"
+        "3. '안심하세요', '추천드려요', '위험해요', '조심하세요' 같은 "
+        "주관적 판단·위로·권유 표현을 사용하지 마세요. 사실 나열과 비교만 하세요.\n"
+        "4. 보증보험·전세보증금반환보증·보증가입·HUG·허그·안심전세 관련 언급을 "
+        "절대 하지 마세요.\n"
+        "5. 법률 자문, 거래 권고, 계약 진행 여부 판단을 하지 마세요.\n"
+        "6. 숫자는 콤마 없이 표기하세요. (예: 12억, 13억 50만원)\n"
+        "7. 마크다운 강조 표기(`**굵게**`, `__굵게__`)를 절대 사용하지 마세요. "
+        "평문으로만 답하세요.\n"
+        "\n"
+        "출력 형식: 2~3문장의 친근한 존댓말. 사실 나열과 비교만."
+    )
+
+    user = (
+        f"[근거 데이터]\n"
+        f"- 위험도 코드: {risk.get('risk_level')}\n"
+        f"- 룰 엔진 판정 사유: {risk.get('rule_reason')}\n"
+        f"- 근저당권 존재: {info.get('has_mortgage')}\n"
+        f"- 채권최고액: {format_won_from_origin(info.get('max_claim_amount'))}\n"
+        f"- 입력 전세금: {format_won_from_origin(user_deposit)}\n"
+        f"- 채권최고액/전세금 비율: {risk.get('claim_to_deposit_ratio')}\n"
+        f"- 근저당권자: {info.get('mortgage_holder') or '없음'}\n"
+        f"\n"
+        f"위 사실들을 자연어로 풀어주세요."
+    )
+
+    try:
+        result = _strip_markdown_emphasis(_call_solar(system, user))
+
+        # 1차: 숫자 grounding
+        if not _validate_registry_grounding(result, context):
+            logger.warning("[Solar grounding fail/registry] %s", result[:120])
+            return _stub_interpret_registry(context)
+
+        # 2차: 보증보험 키워드
+        if any(kw in result for kw in _DIAG_BANNED_KEYWORDS):
+            logger.warning("[Solar insurance keyword leak/registry] %s", result[:120])
+            return _stub_interpret_registry(context)
+
+        # 3차: 주관 표현
+        if any(p in result for p in _SUBJECTIVE_PATTERNS):
+            logger.warning("[Solar subjective leak/registry] %s", result[:120])
+            return _stub_interpret_registry(context)
+
+        return result
+    except OpenAIError as e:
+        logger.warning("[Solar API error/registry] %s", e)
+        return _stub_interpret_registry(context)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("[Solar fallback/registry] %s", e)
+        return _stub_interpret_registry(context)
+
+
+def _stub_interpret_registry(context: dict) -> str:
+    """LLM 미사용/실패 시 fallback. 룰 엔진의 판정과 사유 그대로."""
+    risk = context.get("risk_result", {}) or {}
+    info = context.get("info", {}) or {}
+    user_deposit = context.get("user_deposit_won")
+
+    level = risk.get("risk_level")
+    rule_reason = risk.get("rule_reason", "")
+
+    line1 = _REGISTRY_LEVEL_LINES.get(level, _REGISTRY_LEVEL_DEFAULT)
+
+    # 채권최고액 vs 전세금 자연 표기 비교 (룰 reason과 별개로 사실 한 줄 추가)
+    claim = info.get("max_claim_amount")
+    if claim and user_deposit:
+        line2 = (
+            f"채권최고액은 {format_won_from_origin(claim)}, "
+            f"입력 전세금은 {format_won_from_origin(user_deposit)}이에요."
+        )
+    elif claim:
+        line2 = f"채권최고액은 {format_won_from_origin(claim)}로 확인돼요."
+    else:
+        line2 = ""
+
+    if line2:
+        return f"{line1} {rule_reason} {line2}".strip()
+    return f"{line1} {rule_reason}".strip()

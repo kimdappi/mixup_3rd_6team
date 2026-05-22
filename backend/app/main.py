@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import FRONTEND_ORIGIN
-from app.routers import diagnosis, saju
+from app.routers import diagnosis, registry, saju
 
 logging.basicConfig(
     level=logging.INFO,
@@ -29,6 +29,7 @@ app.add_middleware(
 
 app.include_router(saju.router)
 app.include_router(diagnosis.router)
+app.include_router(registry.router)
 
 
 @app.get("/health")

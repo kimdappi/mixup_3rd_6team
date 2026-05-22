@@ -14,6 +14,7 @@ from openai import OpenAIError
 from app.services import solar_pro
 from app.services.jeonse_rules import select_similar_listings
 from app.services.solar_pro import (
+    _strip_markdown_emphasis,
     _validate_diagnosis_grounding,
     _validate_saju_grounding,
     generate_diagnosis_oneline,
@@ -226,6 +227,66 @@ class TestRealApiSuccess:
 # ============================================================
 # is_available
 # ============================================================
+
+class TestStripMarkdownEmphasis:
+    """LLM 응답의 `**bold**`/`__bold__` 강조 표기 제거."""
+
+    def test_strips_double_asterisk_pairs(self):
+        result = _strip_markdown_emphasis("이것은 **시세 판정** 입니다")
+        assert result == "이것은 시세 판정 입니다"
+
+    def test_strips_double_underscore_pairs(self):
+        result = _strip_markdown_emphasis("__중요한__ 정보")
+        assert result == "중요한 정보"
+
+    def test_strips_multiple_emphasis_blocks(self):
+        text = "① **시세 판정**\n입력 보증금 **9억**\n② **전세가율**"
+        out = _strip_markdown_emphasis(text)
+        assert "**" not in out
+        assert "시세 판정" in out
+        assert "9억" in out
+        assert "전세가율" in out
+
+    def test_strips_unpaired_marker_too(self):
+        # 짝이 안 맞아도 안전한 쪽: 그냥 제거
+        assert _strip_markdown_emphasis("**열린 채로 끝") == "열린 채로 끝"
+
+    def test_empty_input(self):
+        assert _strip_markdown_emphasis("") == ""
+        assert _strip_markdown_emphasis(None) is None
+
+    def test_no_markdown_unchanged(self):
+        assert _strip_markdown_emphasis("순수 텍스트") == "순수 텍스트"
+
+
+class TestLLMResponseStripsMarkdown:
+    """LLM이 마크다운 강조를 만들어내도 사용자에겐 평문이 가야 한다."""
+
+    def test_diagnosis_strips_markdown_from_llm(self, monkeypatch):
+        monkeypatch.setattr("app.services.solar_pro.SOLAR_PRO_API_KEY", "test-key")
+        with patch(
+            "app.services.solar_pro._call_solar",
+            return_value="① **시세 판정**\n보증금이 평균과 비슷해요.",
+        ):
+            result = generate_diagnosis_summary({
+                "market_analysis": {"deposit_status": "fair"},
+                "jeonse_analysis": {"risk_level": "safe"},
+            })
+        assert "**" not in result, f"마크다운 누출: {result!r}"
+
+    def test_saju_strips_markdown_from_llm(self, monkeypatch):
+        monkeypatch.setattr("app.services.solar_pro.SOLAR_PRO_API_KEY", "test-key")
+        with patch(
+            "app.services.solar_pro._call_solar",
+            return_value="**한강시민공원 망원지구**가 가까워요. ✨",
+        ):
+            result = interpret_saju({
+                "name": "테스트",
+                "lacking": ["水"],
+                "nearby": {"水": {"place_name": "한강시민공원 망원지구", "distance_m": 500}},
+            })
+        assert "**" not in result, f"마크다운 누출: {result!r}"
+
 
 class TestIsAvailable:
     def test_returns_false_when_key_empty(self, monkeypatch):
