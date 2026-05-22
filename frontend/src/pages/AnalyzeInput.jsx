@@ -19,6 +19,7 @@ export default function AnalyzeInput() {
   const [depositText, setDepositText] = useState('');
   const [areaText, setAreaText] = useState('');
   const [pdfName, setPdfName] = useState('');
+  const [pdfFile, setPdfFile] = useState(null);
   const [dragOver, setDragOver] = useState(false);
 
   const deposit = parseNumber(depositText);
@@ -58,12 +59,15 @@ export default function AnalyzeInput() {
     };
     sessionStorage.setItem('runtimeInput', JSON.stringify(input));
     sessionStorage.setItem('scenarioType', 'manual');
-    navigate('/analyze/running');
+    // 등기부 분석용 PDF File 객체는 sessionStorage에 못 담으므로 router state로 전달.
+    // 페이지 새로고침 시 사라지지만 정상 흐름엔 충분하다.
+    navigate('/analyze/running', { state: { pdfFile } });
   }
 
   function onPdfPick(file) {
     if (!file) return;
     setPdfName(file.name);
+    setPdfFile(file);
   }
 
   return (

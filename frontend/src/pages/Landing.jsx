@@ -24,7 +24,7 @@ export default function Landing() {
 
         <div className="text-text/90 leading-relaxed space-y-2 text-lg">
           <p>전세사기 피해자 3명 중 2명이 청년이에요.</p>
-          <p>등기부등본, 전세가율, 보증보험… 너무 어렵죠?</p>
+          <p>등기부등본, 전세가율, 시세 비교… 너무 어렵죠?</p>
           <p className="font-semibold mt-3">저희가 친구처럼 풀어드릴게요.</p>
         </div>
 
@@ -40,7 +40,7 @@ export default function Landing() {
             <ShieldCheck className="w-5 h-5 text-primary" />
             공식 데이터 기반
           </div>
-          <p className="text-sm">국토부 · HUG · 서울시 자료 활용</p>
+          <p className="text-sm">국토부 실거래가 공개 데이터 활용</p>
         </div>
 
         <p className="mt-10 text-xs text-subtext flex items-center justify-center gap-1.5">

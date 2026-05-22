@@ -2,8 +2,8 @@
  * 백엔드 `/api/diagnoses/quick` 응답을 Result.jsx가 이해하는 스키마로 변환.
  *
  * 백엔드는 현재 시세 진단만 다루므로,
- * 등기부·보증보험 카드는 `has_registry_analysis`/`has_insurance_analysis`
- * 플래그를 false로 두어 Result.jsx에서 렌더 생략하게 한다.
+ * 등기부 카드는 `has_registry_analysis`를 false로 두어
+ * Result.jsx에서 렌더 생략하게 한다.
  */
 
 const DEPOSIT_STATUS_GRADE = {
@@ -139,18 +139,22 @@ export function mapQuickDiagnosis(resp, input) {
     }
   }
 
-  // checklist: risk_signal의 recommended_action을 severity 높은 순으로
-  const ranked = [...signals].sort(
-    (a, b) => (SEVERITY_RANK[b.severity] ?? 0) - (SEVERITY_RANK[a.severity] ?? 0)
-  );
-  const checklist = ranked
-    .map((s) => s.recommended_action)
-    .filter((a) => a && a.trim().length > 0);
+  // 체크리스트는 백엔드 룰 엔진(`compose_checklist`)이 베이스 + 시그널을 합쳐서 내려준다.
+  // 백엔드 응답이 비어 있는 (구버전 호환) 케이스만 시그널을 자체 추출해 폴백.
+  let checklist = Array.isArray(resp.checklist) ? resp.checklist : [];
   if (checklist.length === 0) {
-    checklist.push(
-      '계약 당일 전입신고 + 확정일자 받기',
-      '등기부등본 발급해 권리관계 확인'
+    const ranked = [...signals].sort(
+      (a, b) => (SEVERITY_RANK[b.severity] ?? 0) - (SEVERITY_RANK[a.severity] ?? 0)
     );
+    checklist = ranked
+      .map((s) => s.recommended_action)
+      .filter((a) => a && a.trim().length > 0);
+  }
+  if (checklist.length === 0) {
+    checklist = [
+      '계약 당일 전입신고 + 확정일자 받기',
+      '등기부등본 발급해 권리관계 확인',
+    ];
   }
 
   const sajuUnlocked = grade === 'A' && market.confidence !== 'low';
@@ -168,20 +172,11 @@ export function mapQuickDiagnosis(resp, input) {
       : '📂 등기부등본 PDF가 업로드되지 않았어요. 등기부 진단은 PDF를 업로드해야 제공돼요.',
   };
 
-  // 보증보험: HUG API 미연결 → 항상 빈 데이터.
-  const insurancePlaceholder = {
-    status: 'no_api',
-    message:
-      '🛡️ HUG 보증보험 API가 아직 연결되지 않았어요. 가입 가능 여부는 HUG 안심전세 앱에서 직접 확인하세요.',
-  };
-
   return {
     address: resp.address,
     source: 'molit_realtime_trade',
     has_registry_analysis: false,
-    has_insurance_analysis: false,
     registry_placeholder: registryPlaceholder,
-    insurance_placeholder: insurancePlaceholder,
     disclaimer: resp.disclaimer,
     missing_information: resp.missing_information || [],
     raw_signals: signals,
@@ -190,6 +185,7 @@ export function mapQuickDiagnosis(resp, input) {
       grade,
       score: gradeScore(grade),
       level: gradeLevel(grade),
+      // Solar Pro 시세 리포트 카드 — 4항목 풀버전 (LLM 또는 stub)
       one_line_summary: resp.summary || '시세 진단이 완료되었어요.',
     },
 
@@ -202,7 +198,8 @@ export function mapQuickDiagnosis(resp, input) {
           ? market.deposit_ratio
           : 0,
       grade: marketGrade,
-      conversational: resp.summary || '',
+      // v3.1 — 시세 안전성 카드 인용 박스는 1줄 요약만. 4항목 풀버전은 위 카드와 중복이므로.
+      conversational: resp.oneline || resp.summary || '',
       details: marketDetails,
     },
 

@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import ProgressAgent from '../components/ProgressAgent.jsx';
 import { mockAnalyze } from '../api/mockApi.js';
 import { quickDiagnosis } from '../api/diagnosisApi.js';
 import { mapQuickDiagnosis } from '../api/mapDiagnosis.js';
+import { analyzeRegistry } from '../api/registryApi.js';
 import { sleep } from '../utils/delay.js';
 
 const INITIAL_AGENTS = {
@@ -25,15 +26,6 @@ const INITIAL_AGENTS = {
     logs: [],
     hideProgress: true,
   },
-  insurance: {
-    icon: '🛡️',
-    name: '보증 Agent',
-    subtitle: 'HUG 안심전세 가입 기준 확인',
-    status: 'pending',
-    progress: 0,
-    logs: [],
-    hideProgress: true,
-  },
   conversational: {
     icon: '💬',
     name: '구어체 변환 Agent',
@@ -46,10 +38,13 @@ const INITIAL_AGENTS = {
 
 export default function AnalyzeRunning() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [coordinator, setCoordinator] = useState('');
   const [agents, setAgents] = useState(INITIAL_AGENTS);
   const [errorMsg, setErrorMsg] = useState('');
   const cancelled = useRef(false);
+  // AnalyzeInput에서 router state로 넘어온 File 객체 (없을 수도 있음)
+  const pdfFile = location.state?.pdfFile || null;
 
   useEffect(() => {
     cancelled.current = false;
@@ -93,17 +88,29 @@ export default function AnalyzeRunning() {
 
       let realResult = null;
       let realError = null;
+      let registryResult = null;
+      let registryError = null;
+
       if (isManual) {
-        try {
-          realResult = await quickDiagnosis({
-            address: input.address,
-            user_deposit: input.deposit,
-            area_sqm: input.area_m2,
-            housing_type: 'apt',
-          });
-        } catch (e) {
-          realError = e;
-        }
+        // 시세 진단과 등기부 분석을 병렬로 호출. 등기부는 PDF가 있을 때만.
+        const diagPromise = quickDiagnosis({
+          address: input.address,
+          user_deposit: input.deposit,
+          area_sqm: input.area_m2,
+          housing_type: 'apt',
+        });
+        const registryPromise = pdfFile
+          ? analyzeRegistry({ file: pdfFile, userDepositWon: input.deposit })
+          : Promise.resolve(null);
+
+        const [diagRes, regRes] = await Promise.allSettled([
+          diagPromise,
+          registryPromise,
+        ]);
+        if (diagRes.status === 'fulfilled') realResult = diagRes.value;
+        else realError = diagRes.reason;
+        if (regRes.status === 'fulfilled') registryResult = regRes.value;
+        else registryError = regRes.reason;
       }
       if (cancelled.current) return;
 
@@ -130,7 +137,7 @@ export default function AnalyzeRunning() {
       updateAgent('market', { status: 'done' });
 
       if (!isManual) {
-        // 시나리오 모드: 등기부/보증 Agent 풀 시뮬레이션 (mock 데이터)
+        // 시나리오 모드: 등기부 Agent 풀 시뮬레이션 (mock 데이터)
         updateAgent('registry', { status: 'running' });
         await appendLog('registry', 'Solar Pro3가 PDF 분석 중...', 800);
         await appendLog('registry', '근저당 항목 확인 중...', 600);
@@ -138,15 +145,37 @@ export default function AnalyzeRunning() {
         await appendLog('registry', '압류·가압류 확인 ✓', 350);
         updateAgent('registry', { status: 'done' });
 
-        updateAgent('insurance', { status: 'running' });
-        await appendLog('insurance', '공시가격 조회 중...', 500);
-        await appendLog('insurance', 'HUG 기준 적용 중...', 500);
-        await appendLog('insurance', '가입 가능성 판정 완료', 500);
-        updateAgent('insurance', { status: 'done' });
+      } else if (pdfFile && registryResult) {
+        // 실 진단 모드 + PDF 업로드됨 + 분석 성공
+        const risk = registryResult.risk || {};
+        const info = registryResult.info || {};
+        updateAgent('registry', { status: 'running' });
+        await appendLog('registry', 'Google Vision OCR 추출 완료', 0);
+        await appendLog(
+          'registry',
+          `근저당권: ${info.has_mortgage ? '있음' : '없음'}`,
+          0,
+        );
+        if (info.max_claim_amount) {
+          await appendLog(
+            'registry',
+            `채권최고액: ${info.max_claim_amount.toLocaleString()}원`,
+            0,
+          );
+        }
+        await appendLog('registry', `위험도: ${risk.risk_level}`, 0);
+        updateAgent('registry', { status: 'done' });
+      } else if (pdfFile && registryError) {
+        // 업로드는 했는데 분석 실패
+        updateAgent('registry', { status: 'error' });
+        await appendLog(
+          'registry',
+          registryError.detail || registryError.message || '등기부 분석 실패',
+          0,
+        );
       } else {
-        // 실 진단 모드: 등기부/보증은 이번 MVP 범위 밖. 그대로 skipped 표기.
+        // PDF 미업로드
         updateAgent('registry', { status: 'skipped' });
-        updateAgent('insurance', { status: 'skipped' });
       }
 
       // 구어체 변환 Agent
@@ -165,6 +194,12 @@ export default function AnalyzeRunning() {
         'sajuUnlocked',
         result.saju_unlocked ? 'true' : 'false'
       );
+      // 등기부 분석 결과는 별도 키로 저장 (Result.jsx의 RegistryAnalysisCard용)
+      if (registryResult) {
+        sessionStorage.setItem('registryResult', JSON.stringify(registryResult));
+      } else {
+        sessionStorage.removeItem('registryResult');
+      }
 
       await sleep(500);
       if (cancelled.current) return;

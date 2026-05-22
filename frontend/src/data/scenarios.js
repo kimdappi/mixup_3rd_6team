@@ -8,7 +8,7 @@ export const SCENARIO_SAFE = {
     score: 92,
     level: '안전',
     one_line_summary:
-      '와, 좋은 매물 찾으셨네요! 전세가율도 낮고, 등기부도 깨끗하고, 보증보험까지 가입 가능해요. 거의 완벽한 조건이에요. 👍',
+      '와, 좋은 매물 찾으셨네요! 전세가율도 낮고, 등기부도 깨끗해요. 거의 완벽한 조건이에요. 👍',
   },
 
   market_analysis: {
@@ -35,21 +35,10 @@ export const SCENARIO_SAFE = {
     details: ['근저당: 없음', '신탁: 없음', '압류·가압류: 없음'],
   },
 
-  insurance_analysis: {
-    eligible: true,
-    grade: 'safe',
-    conversational:
-      '보증보험 가입도 가능해요. 안전장치까지 더하면 거의 완벽한 매물이에요!',
-    details: [
-      'HUG 안심전세 가입 기준 충족',
-      '공시가격 대비 보증금 비율 적정',
-    ],
-  },
-
   checklist: [
-    '전세보증보험 가입 신청 (HUG 안심전세 앱)',
     '계약 당일 전입신고 + 확정일자 받기',
     '임대인 미납 국세 한 번 더 확인',
+    '등기부등본을 잔금일 당일에 한 번 더 발급해 권리관계 재확인',
   ],
 
   saju_unlocked: true,
@@ -66,7 +55,7 @@ export const SCENARIO_WARNING = {
     score: 68,
     level: '주의',
     one_line_summary:
-      '전세가율이 좀 높아서 살짝 위험한데, 보증보험 가입이 가능하니까 보험만 잘 들면 비교적 안전하게 갈 수 있어요. 다만 근저당 3천만 원은 꼭 확인해주세요!',
+      '전세가율이 좀 높아 살짝 위험해요. 특히 근저당 3천만 원이 있으니 권리관계를 꼭 확인해주세요!',
   },
 
   market_analysis: {
@@ -89,7 +78,7 @@ export const SCENARIO_WARNING = {
     has_seizure: false,
     grade: 'warning',
     conversational:
-      '근저당 3천만 원이 있어요. 집주인이 은행에서 3천 빌렸다는 뜻이에요. 만약 경매로 가면 은행이 먼저 가져가니까, 보증보험 꼭 드셔야 해요.',
+      '근저당 3천만 원이 있어요. 집주인이 은행에서 3천 빌렸다는 뜻이에요. 경매로 가면 은행이 먼저 가져가니까, 선순위 채권 규모를 꼼꼼히 확인해주세요.',
     details: [
       '근저당: 3천만 원 (○○은행)',
       '신탁: 없음',
@@ -97,22 +86,11 @@ export const SCENARIO_WARNING = {
     ],
   },
 
-  insurance_analysis: {
-    eligible: true,
-    grade: 'safe',
-    conversational:
-      '좋은 소식! 보증보험 가입이 가능할 것 같아요. 이거 꼭 드세요. 보험만 들면 위에 있는 근저당 위험도 다 막아줘요.',
-    details: [
-      'HUG 안심전세 가입 기준 충족',
-      '근저당 포함 채권 총액 기준 통과',
-    ],
-  },
-
   checklist: [
-    '전세보증보험 가입 (HUG 안심전세 앱) - 필수!',
     '계약 당일 전입신고 + 확정일자',
     "특약사항에 '근저당 추가 설정 금지' 명시",
     '임대인 미납 국세 열람 신청',
+    '잔금일 당일 등기부등본 재발급해 권리관계 재확인',
   ],
 
   saju_unlocked: false,
@@ -158,17 +136,6 @@ export const SCENARIO_DANGER = {
       '근저당: 5천만 원',
       '신탁: 있음 ⚠️ (소유권이 신탁회사에 있음)',
       '압류·가압류: 없음',
-    ],
-  },
-
-  insurance_analysis: {
-    eligible: false,
-    grade: 'danger',
-    conversational:
-      '보증보험 가입도 어려울 것 같아요. 공시가격 대비 보증금이 너무 높아요. 안전장치도 없는 상태인 거예요.',
-    details: [
-      'HUG 안심전세 가입 기준 미충족',
-      '공시가격 대비 보증금 비율 초과',
     ],
   },
 

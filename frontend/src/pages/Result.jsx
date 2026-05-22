@@ -4,6 +4,7 @@ import { Lock, Unlock, RefreshCw, ArrowLeft } from 'lucide-react';
 import RiskBadge from '../components/RiskBadge.jsx';
 import ConversationalBox from '../components/ConversationalBox.jsx';
 import AnalysisCard from '../components/AnalysisCard.jsx';
+import RegistryAnalysisCard from '../components/RegistryAnalysisCard.jsx';
 
 const GRADE_BG = {
   A: 'from-success/10 to-success/0',
@@ -15,6 +16,7 @@ const GRADE_BG = {
 export default function Result() {
   const navigate = useNavigate();
   const [result, setResult] = useState(null);
+  const [registryResult, setRegistryResult] = useState(null);
   const [checkedSet, setCheckedSet] = useState(new Set());
 
   useEffect(() => {
@@ -24,6 +26,14 @@ export default function Result() {
       return;
     }
     setResult(JSON.parse(raw));
+    const regRaw = sessionStorage.getItem('registryResult');
+    if (regRaw) {
+      try {
+        setRegistryResult(JSON.parse(regRaw));
+      } catch {
+        // ignore
+      }
+    }
   }, [navigate]);
 
   const overall = result?.overall_risk;
@@ -96,7 +106,7 @@ export default function Result() {
 
         {/* One-liner */}
         <section className="mt-8">
-          <ConversationalBox title="한 줄로 말하면" tone={overallTone}>
+          <ConversationalBox title="Solar Pro의 시세 리포트" tone={overallTone}>
             {overall.one_line_summary}
           </ConversationalBox>
         </section>
@@ -132,55 +142,28 @@ export default function Result() {
             />
           )}
 
-          {result.has_insurance_analysis !== false && result.insurance_analysis && (
-            <AnalysisCard
-              title="보증보험 가능성"
-              icon="🛡️"
-              grade={result.insurance_analysis.grade}
-              headline={
-                result.insurance_analysis.eligible
-                  ? '✅ 가입 가능'
-                  : '🚨 가입 어려움'
-              }
-              conversational={result.insurance_analysis.conversational}
-              details={result.insurance_analysis.details}
-            />
-          )}
-
-          {result.has_registry_analysis === false && result.registry_placeholder && (
-            <div className="card border-dashed border-2 border-black/10 bg-black/[0.02]">
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-3">
-                  <span className="text-2xl opacity-60">📜</span>
-                  <h3 className="text-lg font-bold text-subtext">등기부 위험도</h3>
+          {/* 실제 등기부 분석 결과가 있으면 카드 렌더, 없으면 placeholder */}
+          {registryResult ? (
+            <RegistryAnalysisCard registryResult={registryResult} />
+          ) : (
+            result.has_registry_analysis === false && result.registry_placeholder && (
+              <div className="card border-dashed border-2 border-black/10 bg-black/[0.02]">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-3">
+                    <span className="text-2xl opacity-60">📜</span>
+                    <h3 className="text-lg font-bold text-subtext">등기부 위험도</h3>
+                  </div>
+                  <span className="px-3 py-1 rounded-full text-sm font-bold bg-black/5 text-subtext">
+                    {result.registry_placeholder.status === 'no_file'
+                      ? '파일 없음'
+                      : '분석 대기'}
+                  </span>
                 </div>
-                <span className="px-3 py-1 rounded-full text-sm font-bold bg-black/5 text-subtext">
-                  {result.registry_placeholder.status === 'no_file'
-                    ? '파일 없음'
-                    : '분석 대기'}
-                </span>
+                <p className="text-text/80 leading-relaxed">
+                  {result.registry_placeholder.message}
+                </p>
               </div>
-              <p className="text-text/80 leading-relaxed">
-                {result.registry_placeholder.message}
-              </p>
-            </div>
-          )}
-
-          {result.has_insurance_analysis === false && result.insurance_placeholder && (
-            <div className="card border-dashed border-2 border-black/10 bg-black/[0.02]">
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-3">
-                  <span className="text-2xl opacity-60">🛡️</span>
-                  <h3 className="text-lg font-bold text-subtext">보증보험 가능성</h3>
-                </div>
-                <span className="px-3 py-1 rounded-full text-sm font-bold bg-black/5 text-subtext">
-                  API 미연결
-                </span>
-              </div>
-              <p className="text-text/80 leading-relaxed">
-                {result.insurance_placeholder.message}
-              </p>
-            </div>
+            )
           )}
         </section>
 
