@@ -4,6 +4,7 @@ import { ArrowLeft, Sparkles } from 'lucide-react';
 import ConversationalBox from '../components/ConversationalBox.jsx';
 import OhengChart from '../components/OhengChart.jsx';
 import { mockSajuMatch } from '../api/mockApi.js';
+import { realSajuMatch } from '../api/sajuApi.js';
 
 export default function Saju() {
   const navigate = useNavigate();
@@ -42,16 +43,32 @@ export default function Saju() {
     e.preventDefault();
     if (!canSubmit) return;
     setPhase('loading');
-    const r = await mockSajuMatch({
+
+    const analysisResult = JSON.parse(
+      sessionStorage.getItem('analysisResult') || '{}'
+    );
+    const address = analysisResult.address || '';
+
+    const birthInfo = {
       year: Number(form.year),
       month: Number(form.month),
       day: Number(form.day),
       hour: Number(form.hour) || 0,
       minute: Number(form.minute) || 0,
-      city: form.city.trim(),
-    });
-    setResult(r);
-    setPhase('result');
+      city: form.city.trim() || '서울',
+    };
+
+    try {
+      const r = await realSajuMatch(birthInfo, address);
+      setResult(r);
+      setPhase('result');
+    } catch (err) {
+      console.error('[sajuApi] failed, falling back to mock:', err);
+      // 백엔드 다운 시 mock으로 fallback — 시연 안정성 보장.
+      const r = await mockSajuMatch(birthInfo);
+      setResult(r);
+      setPhase('result');
+    }
   }
 
   return (
