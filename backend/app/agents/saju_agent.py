@@ -18,20 +18,17 @@ async def run(
     saju = saju_calc.calculate(year, month, day, hour, minute, city)
     oheng_count = saju["oheng_count"]
 
-    # 2. 부족한 오행 → 검색 키워드 집합
+    # 2. 부족한 오행 식별
     lacking = find_lacking(oheng_count)
-    keywords = sorted(
-        {kw for o in lacking for kw in OHENG_ENVIRONMENT[o]["keywords"]}
-    )
 
-    # 3. 카카오맵으로 주변 환경 분석 (async)
-    nearby = await kakao_map.analyze_environment(address, keywords) if keywords else {}
+    # 3. 카카오맵으로 주변 환경 분석 — 오행별 실제 매칭 장소 정보 반환.
+    nearby = await kakao_map.analyze_environment(address, lacking) if lacking else {}
 
-    # 4. 점수 + 세부 계산
+    # 4. 점수 + 세부 계산 (실제 place_name을 factor로 사용)
     score, details = _calculate_score(lacking, nearby)
     grade = _grade_from_score(score)
 
-    # 5. Solar Pro3 해석 (stub) — 이름 포함 context 전달
+    # 5. Solar Pro3 해석 (stub) — 매칭된 장소 정보를 grounding 근거로 전달.
     conversational = solar_pro.interpret_saju(
         {
             "name": name,
@@ -55,30 +52,34 @@ async def run(
 
 def _calculate_score(
     lacking: list[str],
-    nearby: dict[str, int],
+    nearby: dict[str, dict],
 ) -> tuple[int, list[dict]]:
     """
     50점 base. 부족한 오행마다:
-      - 키워드 매칭되는 장소가 가까울수록 가점(최대 +30)
-      - 매칭 없으면 -5
+      - nearby에 실제 매칭된 장소 있음 → 거리 가까울수록 가점(최대 +30)
+      - 없음 → -5 (단, 火·土처럼 검증 불가 오행은 -5 부과 안 함)
     """
     score = 50
     details: list[dict] = []
 
     for o in lacking:
-        env = OHENG_ENVIRONMENT[o]
-        matched = False
-        for kw in env["keywords"]:
-            if kw in nearby:
-                distance = nearby[kw]
-                points = max(0, 30 - (distance // 100))
-                score += points
-                details.append(
-                    {"factor": f"{kw} 인접 ({o} 보완)", "points": points}
-                )
-                matched = True
-                break
-        if not matched:
+        if o in nearby:
+            place = nearby[o]
+            distance = place["distance_m"]
+            points = max(0, 30 - (distance // 100))
+            score += points
+            details.append(
+                {
+                    "factor": f"{place['place_name']} 인접 ({o} 보완)",
+                    "points": points,
+                }
+            )
+        else:
+            env = OHENG_ENVIRONMENT.get(o, {})
+            queries = env.get("search_queries", []) or []
+            if not queries:
+                # 火·土 — 카카오로 검증 불가 → 가점도 감점도 없음.
+                continue
             score -= 5
             details.append(
                 {
