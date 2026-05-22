@@ -1,15 +1,16 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Sparkles } from 'lucide-react';
+import { ArrowLeft, Sparkles, AlertTriangle, RefreshCw } from 'lucide-react';
 import ConversationalBox from '../components/ConversationalBox.jsx';
 import OhengChart from '../components/OhengChart.jsx';
-import { mockSajuMatch } from '../api/mockApi.js';
 import { realSajuMatch } from '../api/sajuApi.js';
 
 export default function Saju() {
   const navigate = useNavigate();
-  const [phase, setPhase] = useState('input'); // 'input' | 'loading' | 'result'
+  // 'input' | 'loading' | 'result' | 'error'
+  const [phase, setPhase] = useState('input');
   const [form, setForm] = useState({
+    name: '',
     year: '',
     month: '',
     day: '',
@@ -18,6 +19,7 @@ export default function Saju() {
     city: '',
   });
   const [result, setResult] = useState(null);
+  const [error, setError] = useState('');
 
   useEffect(() => {
     const unlocked = sessionStorage.getItem('sajuUnlocked') === 'true';
@@ -33,6 +35,7 @@ export default function Saju() {
   }
 
   const canSubmit =
+    form.name.trim().length > 0 &&
     Number(form.year) >= 1900 &&
     Number(form.month) >= 1 &&
     Number(form.month) <= 12 &&
@@ -42,6 +45,7 @@ export default function Saju() {
   async function onSubmit(e) {
     e.preventDefault();
     if (!canSubmit) return;
+    setError('');
     setPhase('loading');
 
     const analysisResult = JSON.parse(
@@ -50,6 +54,7 @@ export default function Saju() {
     const address = analysisResult.address || '';
 
     const birthInfo = {
+      name: form.name.trim(),
       year: Number(form.year),
       month: Number(form.month),
       day: Number(form.day),
@@ -63,12 +68,15 @@ export default function Saju() {
       setResult(r);
       setPhase('result');
     } catch (err) {
-      console.error('[sajuApi] failed, falling back to mock:', err);
-      // 백엔드 다운 시 mock으로 fallback — 시연 안정성 보장.
-      const r = await mockSajuMatch(birthInfo);
-      setResult(r);
-      setPhase('result');
+      console.error('[sajuApi] failed:', err);
+      setError(err?.message || '사주 분석 서버에 연결할 수 없어요.');
+      setPhase('error');
     }
+  }
+
+  function retryFromError() {
+    setError('');
+    setPhase('input');
   }
 
   return (
@@ -102,6 +110,10 @@ export default function Saju() {
 
         {phase === 'result' && result && <SajuResultView result={result} />}
 
+        {phase === 'error' && (
+          <SajuErrorView message={error} onRetry={retryFromError} />
+        )}
+
         <p className="mt-10 text-xs text-subtext text-center">
           ⚠️ 사주는 전통 문화 콘텐츠로 제공돼요. 계약 결정은 안전성 분석을 우선해주세요.
         </p>
@@ -126,6 +138,18 @@ function SajuInputView({ form, update, onSubmit, canSubmit }) {
       <p className="mt-2 text-subtext">🔮 사주로 이 집과의 궁합을 봐드려요</p>
 
       <form onSubmit={onSubmit} className="card mt-8 space-y-6">
+        <div>
+          <label className="block font-semibold mb-2">🙋 이름</label>
+          <input
+            type="text"
+            value={form.name}
+            onChange={(e) => update('name', e.target.value)}
+            placeholder="예: 홍길동"
+            maxLength={20}
+            className="input-field"
+          />
+        </div>
+
         <div>
           <label className="block font-semibold mb-2">📅 생년월일</label>
           <div className="grid grid-cols-3 gap-2">
@@ -211,6 +235,8 @@ function SajuInputView({ form, update, onSubmit, canSubmit }) {
 }
 
 function SajuResultView({ result }) {
+  const details = Array.isArray(result.match_details) ? result.match_details : [];
+
   return (
     <>
       <h1 className="text-2xl md:text-3xl font-extrabold">🔮 사주 궁합 결과</h1>
@@ -249,28 +275,60 @@ function SajuResultView({ result }) {
 
       <section className="card mt-6">
         <h3 className="font-bold mb-3">매칭 상세</h3>
-        <ul className="space-y-2">
-          {result.match_details.map((d, i) => (
-            <li
-              key={i}
-              className="flex items-center justify-between text-text"
-            >
-              <span>
-                {d.points >= 0 ? '✓' : '△'} {d.factor}
-              </span>
-              <span
-                className={`font-bold ${
-                  d.points >= 0 ? 'text-bonus' : 'text-danger'
-                }`}
+        {details.length === 0 ? (
+          <p className="text-sm text-subtext">
+            부족한 오행이 없어서 별도의 환경 매칭 항목은 없어요. 사주가 균형 잡힌 편이에요. ✨
+          </p>
+        ) : (
+          <ul className="space-y-2">
+            {details.map((d, i) => (
+              <li
+                key={i}
+                className="flex items-center justify-between text-text"
               >
-                {d.points > 0 ? `+${d.points}점` : `${d.points}점`}
-              </span>
-            </li>
-          ))}
-        </ul>
+                <span>
+                  {d.points >= 0 ? '✓' : '△'} {d.factor}
+                </span>
+                <span
+                  className={`font-bold ${
+                    d.points >= 0 ? 'text-bonus' : 'text-danger'
+                  }`}
+                >
+                  {d.points > 0 ? `+${d.points}점` : `${d.points}점`}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
       </section>
 
       <p className="mt-6 text-xs text-subtext">{result.disclaimer}</p>
     </>
+  );
+}
+
+function SajuErrorView({ message, onRetry }) {
+  return (
+    <div className="card text-center py-12">
+      <AlertTriangle className="w-10 h-10 text-danger mx-auto" />
+      <h2 className="mt-4 text-xl font-bold">사주 분석을 가져오지 못했어요</h2>
+      <p className="mt-2 text-subtext break-all">{message}</p>
+
+      <div className="mt-6 text-left bg-bg rounded-xl px-4 py-3 text-sm text-subtext space-y-1">
+        <p className="font-semibold text-text">확인해주세요</p>
+        <p>• 백엔드 서버가 켜져 있나요? (포트 8000)</p>
+        <p>• <code>backend/.env</code> 의 <code>FRONTEND_ORIGIN</code> 이 현재 주소와 일치하나요?</p>
+        <p>• 백엔드 콘솔에 에러 traceback이 있나요?</p>
+      </div>
+
+      <button
+        type="button"
+        onClick={onRetry}
+        className="btn-primary mt-6 bg-bonus hover:brightness-110"
+      >
+        <RefreshCw className="w-4 h-4" />
+        다시 시도
+      </button>
+    </div>
   );
 }

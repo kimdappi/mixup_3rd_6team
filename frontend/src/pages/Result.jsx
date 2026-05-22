@@ -146,7 +146,7 @@ export default function Result() {
 
         {/* Checklist */}
         <section className="card mt-10">
-          <h3 className="text-lg font-bold mb-4">📋 지원님이 꼭 하셔야 할 일</h3>
+          <h3 className="text-lg font-bold mb-4">📋 꼭 하셔야 할 일</h3>
           <ul className="space-y-2">
             {result.checklist.map((item, i) => {
               const checked = checkedSet.has(i);

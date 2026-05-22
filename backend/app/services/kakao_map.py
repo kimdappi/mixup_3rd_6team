@@ -11,46 +11,55 @@ def _headers() -> dict:
 
 
 async def geocode(address: str) -> tuple[float, float] | None:
-    """주소 → (위도, 경도). 실패 시 None."""
+    """주소 → (위도, 경도). 키 없음/카카오 에러 시 None (소프트페일)."""
     if not KAKAO_REST_API_KEY:
         return None
-    async with httpx.AsyncClient(timeout=5.0) as client:
-        res = await client.get(
-            f"{BASE}/search/address.json",
-            headers=_headers(),
-            params={"query": address},
-        )
-        res.raise_for_status()
-        docs = res.json().get("documents", [])
-        if not docs:
-            return None
-        return float(docs[0]["y"]), float(docs[0]["x"])
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            res = await client.get(
+                f"{BASE}/search/address.json",
+                headers=_headers(),
+                params={"query": address},
+            )
+            res.raise_for_status()
+            docs = res.json().get("documents", [])
+            if not docs:
+                return None
+            return float(docs[0]["y"]), float(docs[0]["x"])
+    except httpx.HTTPError as e:
+        # 시연 중단 방지: 카카오가 거부해도 환경 분석만 비우고 계속 진행.
+        print(f"[WARN] kakao geocode failed: {type(e).__name__}: {e}")
+        return None
 
 
 async def search_nearby(
     lat: float, lng: float, keyword: str, radius_m: int = 2000
 ) -> int | None:
-    """좌표 주변에서 키워드 검색 → 가장 가까운 결과까지의 거리(m). 없으면 None."""
+    """좌표 주변에서 키워드 검색 → 가장 가까운 결과까지의 거리(m). 카카오 에러 시 None."""
     if not KAKAO_REST_API_KEY:
         return None
-    async with httpx.AsyncClient(timeout=5.0) as client:
-        res = await client.get(
-            f"{BASE}/search/keyword.json",
-            headers=_headers(),
-            params={
-                "query": keyword,
-                # ⚠️ 카카오는 x=경도(lng), y=위도(lat) — 일반 표기와 반대.
-                "x": lng,
-                "y": lat,
-                "radius": radius_m,
-                "sort": "distance",
-            },
-        )
-        res.raise_for_status()
-        docs = res.json().get("documents", [])
-        if not docs:
-            return None
-        return int(docs[0]["distance"])
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            res = await client.get(
+                f"{BASE}/search/keyword.json",
+                headers=_headers(),
+                params={
+                    "query": keyword,
+                    # ⚠️ 카카오는 x=경도(lng), y=위도(lat) — 일반 표기와 반대.
+                    "x": lng,
+                    "y": lat,
+                    "radius": radius_m,
+                    "sort": "distance",
+                },
+            )
+            res.raise_for_status()
+            docs = res.json().get("documents", [])
+            if not docs:
+                return None
+            return int(docs[0]["distance"])
+    except httpx.HTTPError as e:
+        print(f"[WARN] kakao keyword search '{keyword}' failed: {type(e).__name__}: {e}")
+        return None
 
 
 async def analyze_environment(address: str, keywords: list[str]) -> dict[str, int]:

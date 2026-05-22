@@ -5,6 +5,7 @@ export async function realSajuMatch(birthInfo, address) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
+      name: birthInfo.name,
       year: birthInfo.year,
       month: birthInfo.month,
       day: birthInfo.day,

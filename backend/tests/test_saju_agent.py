@@ -44,6 +44,7 @@ async def test_saju_agent_run_without_kakao_key():
     from app.agents import saju_agent
 
     result = await saju_agent.run(
+        name="테스트",
         year=1998, month=6, day=15, hour=14, minute=30,
         city="서울", address="서울 강서구 가양동",
     )
@@ -52,3 +53,19 @@ async def test_saju_agent_run_without_kakao_key():
     assert "match_score" in result
     assert 0 <= result["match_score"] <= 100
     assert result["match_grade"] in {"아주 좋음", "양호", "보통"}
+    # 이름이 conversational 문장에 포함되어야 함. (stub fallback도 모두 이름을 사용.)
+    assert "테스트" in result["conversational"]
+
+
+@pytest.mark.asyncio
+async def test_saju_agent_run_custom_name():
+    """다른 이름을 줘도 conversational에 정확히 반영되는지."""
+    from app.agents import saju_agent
+
+    result = await saju_agent.run(
+        name="홍길동",
+        year=1998, month=6, day=15, hour=14, minute=30,
+        city="서울", address="서울 강서구 가양동",
+    )
+    assert "홍길동" in result["conversational"]
+    assert "지원" not in result["conversational"]  # 하드코딩된 이름이 나오면 안 됨

@@ -4,6 +4,7 @@ from pydantic import BaseModel, Field
 
 
 class SajuRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=20)
     year: int = Field(..., ge=1900, le=2100)
     month: int = Field(..., ge=1, le=12)
     day: int = Field(..., ge=1, le=31)
