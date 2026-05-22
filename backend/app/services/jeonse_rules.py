@@ -8,6 +8,62 @@ from typing import Optional
 from app.core.risk_signals import RiskSignal, Severity
 from app.services.market_rules import NearbyFilterResult, calculate_averages
 
+# ============================================================
+# 비슷한 매물 선별 (v3 — LLM 리포트의 "비슷한 매물" 항목 근거 데이터)
+# ============================================================
+
+SIMILAR_LISTING_TOLERANCE = 0.10  # ±10%
+SIMILAR_LISTING_MAX = 3
+
+
+def select_similar_listings(
+    user_deposit: float,
+    samples: list[dict],
+    tolerance: float = SIMILAR_LISTING_TOLERANCE,
+    max_count: int = SIMILAR_LISTING_MAX,
+) -> list[dict]:
+    """제시 보증금 ±tolerance 범위 내 표본을 선별.
+
+    Args:
+        user_deposit: 사용자가 입력한 보증금 (원 단위 — 코드베이스 통일 단위)
+        samples: diagnosis_agent._pick_samples 결과. 각 dict는
+                 `price_won`, `area_sqm`, `apt_name`, `dong`, `floor`,
+                 `year`, `month` 필드를 가진다.
+        tolerance: 허용 오차 (0.10 = ±10%)
+        max_count: 최대 반환 개수
+
+    Returns:
+        조건 매칭 표본 리스트 (거래일 최근순 max_count개).
+        매칭이 0건이면 빈 리스트.
+
+    선별 규칙:
+        - |sample.price_won - user_deposit| / user_deposit <= tolerance
+        - 매칭이 max_count보다 많으면 (year, month) 내림차순으로 자르기
+        - 단위는 원으로 통일되어 있다고 가정 (`_pick_samples` 출력 구조)
+    """
+    if not user_deposit or not samples:
+        return []
+
+    matched: list[dict] = []
+    for s in samples:
+        price = s.get("price_won")
+        if not price:
+            continue
+        diff_ratio = abs(price - user_deposit) / user_deposit
+        if diff_ratio <= tolerance:
+            matched.append(s)
+
+    # 거래일 내림차순 정렬. (year, month) 튜플 비교가 가장 안전 — 문자열 정렬은
+    # zero-padding 누락 시 깨질 수 있다.
+    def sort_key(s: dict) -> tuple[int, int]:
+        try:
+            return (int(s.get("year") or 0), int(s.get("month") or 0))
+        except (TypeError, ValueError):
+            return (0, 0)
+
+    matched.sort(key=sort_key, reverse=True)
+    return matched[:max_count]
+
 
 # ============================================================
 # 1. 전세가율 계산 및 위험 판정
@@ -96,7 +152,7 @@ def build_jeonse_signals(
             confidence=confidence,
             evidence={"user_jeonse_rate": user_jeonse_rate},
             source="MOLIT_REALTIME_TRADE",
-            recommended_action="HUG 보증보험 가입을 반드시 확인하고, 가입이 어렵다면 계약을 재검토하세요.",
+            recommended_action="전세가율이 매우 높아 보증금 회수 위험이 큽니다. 임대인 채무·국세 체납 여부, 등기부 권리관계를 면밀히 점검하고, 가능하면 반전세 전환을 검토하세요.",
         ))
     elif risk_level == "high":
         signals.append(RiskSignal(
@@ -106,7 +162,7 @@ def build_jeonse_signals(
             confidence=confidence,
             evidence={"user_jeonse_rate": user_jeonse_rate},
             source="MOLIT_REALTIME_TRADE",
-            recommended_action="HUG 보증보험 가입 가능 여부를 확인하세요.",
+            recommended_action="임대인의 미납 국세·근저당 등 선순위 권리관계를 등기부등본에서 직접 확인하세요.",
         ))
     elif risk_level == "caution":
         signals.append(RiskSignal(
@@ -116,7 +172,7 @@ def build_jeonse_signals(
             confidence=confidence,
             evidence={"user_jeonse_rate": user_jeonse_rate},
             source="MOLIT_REALTIME_TRADE",
-            recommended_action="안전 범위에 가깝지만 보증보험 가입을 고려해보세요.",
+            recommended_action="안전 범위에 가깝지만, 등기부등본의 선순위 권리관계는 한 번 더 확인하세요.",
         ))
     # safe는 신호 없음
 

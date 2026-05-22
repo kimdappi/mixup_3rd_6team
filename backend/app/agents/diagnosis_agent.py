@@ -10,12 +10,13 @@
       -> generate_summary  (Solar Pro)
 """
 from app.services import address_parser, jeonse_rules, market_rules, solar_pro
+from app.services.checklist_rules import compose_checklist
 from app.services.molit_api import MolitApiClient
 
 DISCLAIMER = (
-    "이 결과는 공개 데이터 기반의 사전진단이며, 전세사기 여부나 실제 "
-    "보증보험 가입 가능 여부를 확정하지 않습니다. 실제 계약 전에는 "
-    "최신 공식 문서와 보증기관 심사 결과를 확인해야 합니다."
+    "이 결과는 공개 데이터 기반의 사전진단이며, 전세사기 여부나 "
+    "권리관계 안전을 확정하지 않습니다. 실제 계약 전에는 "
+    "최신 등기부등본·임대인 신원·공식 문서를 직접 확인하세요."
 )
 
 
@@ -58,25 +59,46 @@ async def run_quick_diagnosis(
     # 6. risk_signal 수집
     risk_signals = [*market_analysis.signals, *jeonse_analysis.signals]
 
-    # 7. Solar Pro 요약 (stub)
-    summary = solar_pro.generate_diagnosis_summary({
+    # 7. 근거 표본 추출 — UI "상세 보기"와 LLM context가 같은 출처를 쓰도록 먼저 구성.
+    rent_samples = _pick_samples(nearby.rent_deals, "deposit_won")
+    trade_samples = _pick_samples(nearby.trade_deals, "price_won")
+
+    # 8. 비슷한 매물 선별 (v3 — LLM 리포트 "비슷한 매물" 항목 근거)
+    similar_listings = jeonse_rules.select_similar_listings(
+        user_deposit=user_deposit,
+        samples=rent_samples,
+    )
+
+    # 9. Solar Pro 요약 (실 API 연결, 실패 시 stub fallback) + 1줄 요약 (룰 엔진만)
+    llm_context = {
         "address": parsed.normalized,
+        "user_deposit": user_deposit,  # 원 단위 — grounding 허용 숫자에 포함시키기 위해 전달
         "market_analysis": market_analysis.to_dict(),
         "jeonse_analysis": jeonse_analysis.to_dict(),
+        "similar_listings": similar_listings,
         "risk_signals": [s.to_dict() for s in risk_signals],
-    })
+    }
+    summary = solar_pro.generate_diagnosis_summary(llm_context)
+    oneline = solar_pro.generate_diagnosis_oneline(llm_context)
 
-    # 8. 근거 표본 첨부 — UI에서 "상세 보기"로 펼쳐서 보여줄 용도.
+    # 10. market_analysis dict에 표본 부착
     market_dict = market_analysis.to_dict()
-    market_dict["rent_samples"] = _pick_samples(nearby.rent_deals, "deposit_won")
-    market_dict["trade_samples"] = _pick_samples(nearby.trade_deals, "price_won")
+    market_dict["rent_samples"] = rent_samples
+    market_dict["trade_samples"] = trade_samples
+
+    # 11. 체크리스트 = 베이스 안전 점검 + 매물별 시그널 recommended_action
+    checklist = compose_checklist(
+        s.recommended_action for s in risk_signals
+    )
 
     return {
         "address": parsed.normalized,
         "market_analysis": market_dict,
         "jeonse_ratio_analysis": jeonse_analysis.to_dict(),
         "risk_signals": [s.to_dict() for s in risk_signals],
-        "summary": summary,
+        "summary": summary,         # 4항목 풀버전 (Solar Pro 리포트 카드용)
+        "oneline": oneline,         # 1줄 요약 (시세 안전성 카드 인용 박스용, v3.1)
+        "checklist": checklist,     # 베이스 + 시그널 통합 체크리스트
         "missing_information": _collect_missing_info(nearby, jeonse_analysis),
         "disclaimer": DISCLAIMER,
     }

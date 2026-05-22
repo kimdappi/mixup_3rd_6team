@@ -57,6 +57,11 @@ async def test_quick_diagnosis_full_response_schema():
     assert response.market_analysis.deposit_status == "fair"
     assert response.disclaimer
     assert response.summary
+    # 체크리스트는 베이스 4개를 반드시 포함 (안전한 매물도 풍성한 체크리스트)
+    from app.services.checklist_rules import BASE_CHECKLIST
+    for base_item in BASE_CHECKLIST:
+        assert base_item in response.checklist, f"베이스 항목 누락: {base_item}"
+    assert len(response.checklist) >= len(BASE_CHECKLIST)
 
 
 @pytest.mark.asyncio

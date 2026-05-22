@@ -49,6 +49,8 @@ class QuickDiagnosisResponse(BaseModel):
     market_analysis: MarketAnalysisDto
     jeonse_ratio_analysis: JeonseRatioDto
     risk_signals: list[RiskSignalDto]
-    summary: str
+    summary: str         # 4항목 풀버전 (Solar Pro 시세 리포트 카드용)
+    oneline: str = ""    # 1줄 요약 (시세 안전성 카드 인용 박스용, v3.1)
+    checklist: list[str] = []   # 베이스 + 시그널 통합 체크리스트 (룰 엔진 산출)
     missing_information: list[str]
     disclaimer: str
