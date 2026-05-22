@@ -3,19 +3,25 @@ import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.core.config import FRONTEND_ORIGIN
+from app.core.config import get_settings
 from app.routers import saju
+from app.routers import diagnoses
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",
 )
 
-app = FastAPI(title="DestinyHouse API")
+settings = get_settings()
 
-# FRONTEND_ORIGIN이 쉼표로 여러 origin을 받을 수 있게 처리.
-# Vite가 포트 충돌 시 5174로 fallback하는 흔한 케이스 커버.
-_allowed = [o.strip() for o in FRONTEND_ORIGIN.split(",") if o.strip()]
+app = FastAPI(
+    title="DestinyHouse API",
+    description="사주 Agent + 전세계약 리스크 진단 통합 백엔드",
+    version="0.2.0",
+)
+
+# CORS: 쉼표로 여러 origin 지정 가능. Vite가 포트 충돌 시 5174 fallback 커버.
+_allowed = [o.strip() for o in settings.frontend_origin.split(",") if o.strip()]
 _default_dev = ["http://localhost:5173", "http://localhost:5174"]
 _allow_origins = sorted(set(_allowed + _default_dev))
 
@@ -27,7 +33,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(saju.router)
+# ── 라우터 등록 ────────────────────────────────────────────────────
+app.include_router(saju.router)          # /api/saju
+app.include_router(diagnoses.router)     # /diagnoses/quick, /diagnoses/full
 
 
 @app.get("/health")
