@@ -1,4 +1,4 @@
-import { Check, Loader2 } from 'lucide-react';
+import { Check, Loader2, MinusCircle, AlertOctagon } from 'lucide-react';
 
 export default function ProgressAgent({
   icon = '🤖',
@@ -12,6 +12,8 @@ export default function ProgressAgent({
   const isDone = status === 'done';
   const isRunning = status === 'running';
   const isPending = status === 'pending';
+  const isSkipped = status === 'skipped';
+  const isError = status === 'error';
 
   const bar = Math.max(0, Math.min(100, progress));
 
@@ -46,6 +48,16 @@ export default function ProgressAgent({
               {isPending && (
                 <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-black/5 text-subtext text-sm font-semibold">
                   대기
+                </span>
+              )}
+              {isSkipped && (
+                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-black/5 text-subtext text-sm font-semibold">
+                  <MinusCircle className="w-4 h-4" /> 이번 단계 생략
+                </span>
+              )}
+              {isError && (
+                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-danger/15 text-danger text-sm font-semibold">
+                  <AlertOctagon className="w-4 h-4" /> 실패
                 </span>
               )}
             </div>

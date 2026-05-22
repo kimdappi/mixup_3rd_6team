@@ -36,6 +36,9 @@ export default function AnalyzeInput() {
       deposit: s.deposit,
       area_m2: s.area_m2,
       scenarioType,
+      // 시나리오 칩은 데모용이라 PDF 업로드 상태와 무관
+      pdf_uploaded: true,
+      pdf_name: 'demo.pdf',
     };
     sessionStorage.setItem('runtimeInput', JSON.stringify(input));
     sessionStorage.setItem('scenarioType', scenarioType);
@@ -50,6 +53,8 @@ export default function AnalyzeInput() {
       deposit,
       area_m2: parseNumber(areaText),
       scenarioType: 'manual',
+      pdf_uploaded: Boolean(pdfName),
+      pdf_name: pdfName || null,
     };
     sessionStorage.setItem('runtimeInput', JSON.stringify(input));
     sessionStorage.setItem('scenarioType', 'manual');
@@ -137,6 +142,11 @@ export default function AnalyzeInput() {
 
         {/* Manual form */}
         <form onSubmit={handleSubmit} className="card space-y-6">
+          <div className="rounded-xl bg-primary/5 border border-primary/20 px-4 py-3 text-sm text-text/80">
+            💡 실시간 시세 진단은 현재 <b>서울 25개 구의 아파트</b>만 정확히 지원돼요.
+            (국토부 실거래가 데이터 범위)
+          </div>
+
           <div>
             <label className="block font-semibold mb-2">📍 주소</label>
             <input

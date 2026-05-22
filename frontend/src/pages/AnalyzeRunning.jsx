@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import ProgressAgent from '../components/ProgressAgent.jsx';
 import { mockAnalyze } from '../api/mockApi.js';
+import { quickDiagnosis } from '../api/diagnosisApi.js';
+import { mapQuickDiagnosis } from '../api/mapDiagnosis.js';
 import { sleep } from '../utils/delay.js';
 
 const INITIAL_AGENTS = {
@@ -46,6 +48,7 @@ export default function AnalyzeRunning() {
   const navigate = useNavigate();
   const [coordinator, setCoordinator] = useState('');
   const [agents, setAgents] = useState(INITIAL_AGENTS);
+  const [errorMsg, setErrorMsg] = useState('');
   const cancelled = useRef(false);
 
   useEffect(() => {
@@ -74,32 +77,77 @@ export default function AnalyzeRunning() {
 
     async function run() {
       const input = JSON.parse(sessionStorage.getItem('runtimeInput') || '{}');
+      const isManual = input?.scenarioType === 'manual';
 
-      setCoordinator('안전성 평가가 필요하군요. 전문가들을 호출할게요.');
+      setCoordinator(
+        isManual
+          ? '시세 진단을 시작할게요. 국토부 실거래가를 조회합니다.'
+          : '안전성 평가가 필요하군요. 전문가들을 호출할게요.'
+      );
       await sleep(600);
       if (cancelled.current) return;
 
       // 시세 Agent
       updateAgent('market', { status: 'running' });
-      await appendLog('market', '국토부 실거래가 조회 중...', 600);
-      await appendLog('market', '주변 거래 12건 분석...', 700);
-      await appendLog('market', '전세가율 계산 완료', 500);
+      await appendLog('market', '국토부 실거래가 조회 중...', 500);
+
+      let realResult = null;
+      let realError = null;
+      if (isManual) {
+        try {
+          realResult = await quickDiagnosis({
+            address: input.address,
+            user_deposit: input.deposit,
+            area_sqm: input.area_m2,
+            housing_type: 'apt',
+          });
+        } catch (e) {
+          realError = e;
+        }
+      }
+      if (cancelled.current) return;
+
+      if (isManual && realError) {
+        updateAgent('market', { status: 'error' });
+        setErrorMsg(
+          realError.detail || realError.message || '시세 진단 중 오류가 발생했어요.'
+        );
+        return;
+      }
+
+      if (isManual && realResult) {
+        const m = realResult.market_analysis || {};
+        await appendLog(
+          'market',
+          `근거 표본: ${m.scope} · 전세 ${m.jeonse_count}건 / 매매 ${m.trade_count}건`,
+          600
+        );
+        await appendLog('market', `신뢰도: ${m.confidence}`, 400);
+      } else {
+        await appendLog('market', '주변 거래 12건 분석...', 700);
+        await appendLog('market', '전세가율 계산 완료', 500);
+      }
       updateAgent('market', { status: 'done' });
 
-      // 등기부 Agent
-      updateAgent('registry', { status: 'running' });
-      await appendLog('registry', 'Solar Pro3가 PDF 분석 중...', 800);
-      await appendLog('registry', '근저당 항목 확인 중...', 600);
-      await appendLog('registry', '신탁 여부 확인 ✓', 350);
-      await appendLog('registry', '압류·가압류 확인 ✓', 350);
-      updateAgent('registry', { status: 'done' });
+      if (!isManual) {
+        // 시나리오 모드: 등기부/보증 Agent 풀 시뮬레이션 (mock 데이터)
+        updateAgent('registry', { status: 'running' });
+        await appendLog('registry', 'Solar Pro3가 PDF 분석 중...', 800);
+        await appendLog('registry', '근저당 항목 확인 중...', 600);
+        await appendLog('registry', '신탁 여부 확인 ✓', 350);
+        await appendLog('registry', '압류·가압류 확인 ✓', 350);
+        updateAgent('registry', { status: 'done' });
 
-      // 보증 Agent
-      updateAgent('insurance', { status: 'running' });
-      await appendLog('insurance', '공시가격 조회 중...', 500);
-      await appendLog('insurance', 'HUG 기준 적용 중...', 500);
-      await appendLog('insurance', '가입 가능성 판정 완료', 500);
-      updateAgent('insurance', { status: 'done' });
+        updateAgent('insurance', { status: 'running' });
+        await appendLog('insurance', '공시가격 조회 중...', 500);
+        await appendLog('insurance', 'HUG 기준 적용 중...', 500);
+        await appendLog('insurance', '가입 가능성 판정 완료', 500);
+        updateAgent('insurance', { status: 'done' });
+      } else {
+        // 실 진단 모드: 등기부/보증은 이번 MVP 범위 밖. 그대로 skipped 표기.
+        updateAgent('registry', { status: 'skipped' });
+        updateAgent('insurance', { status: 'skipped' });
+      }
 
       // 구어체 변환 Agent
       updateAgent('conversational', { status: 'running', progress: 25 });
@@ -108,7 +156,9 @@ export default function AnalyzeRunning() {
       updateAgent('conversational', { status: 'done', progress: 100 });
 
       // Resolve result
-      const result = await mockAnalyze(input);
+      const result = isManual
+        ? mapQuickDiagnosis(realResult, input)
+        : await mockAnalyze(input);
       if (cancelled.current) return;
       sessionStorage.setItem('analysisResult', JSON.stringify(result));
       sessionStorage.setItem(
@@ -138,6 +188,18 @@ export default function AnalyzeRunning() {
         </p>
 
         <div className="mt-6 h-px bg-black/10" />
+
+        {errorMsg && (
+          <div className="mt-6 rounded-2xl border-2 border-danger/40 bg-danger/5 p-5">
+            <div className="flex items-center gap-2 text-danger font-bold mb-2">
+              🚨 시세 진단 실패
+            </div>
+            <p className="text-text/90 leading-relaxed">{errorMsg}</p>
+            <p className="text-sm text-subtext mt-3">
+              MOLIT_API_SERVICE_KEY 설정 또는 주소가 서울 25개 구에 속하는지 확인해주세요.
+            </p>
+          </div>
+        )}
 
         {/* Coordinator */}
         <section className="my-8">

@@ -115,34 +115,95 @@ export default function Result() {
             details={result.market_analysis.details}
           />
 
-          <AnalysisCard
-            title="등기부 위험도"
-            icon="📜"
-            grade={result.registry_analysis.grade}
-            headline={
-              result.registry_analysis.has_trust
-                ? '🚨 신탁 표시 발견'
-                : result.registry_analysis.mortgage_max > 0
-                ? `근저당 ${Math.floor(result.registry_analysis.mortgage_max / 10000)}만 원`
-                : '깨끗한 등기부'
-            }
-            conversational={result.registry_analysis.conversational}
-            details={result.registry_analysis.details}
-          />
+          {result.has_registry_analysis !== false && result.registry_analysis && (
+            <AnalysisCard
+              title="등기부 위험도"
+              icon="📜"
+              grade={result.registry_analysis.grade}
+              headline={
+                result.registry_analysis.has_trust
+                  ? '🚨 신탁 표시 발견'
+                  : result.registry_analysis.mortgage_max > 0
+                  ? `근저당 ${Math.floor(result.registry_analysis.mortgage_max / 10000)}만 원`
+                  : '깨끗한 등기부'
+              }
+              conversational={result.registry_analysis.conversational}
+              details={result.registry_analysis.details}
+            />
+          )}
 
-          <AnalysisCard
-            title="보증보험 가능성"
-            icon="🛡️"
-            grade={result.insurance_analysis.grade}
-            headline={
-              result.insurance_analysis.eligible
-                ? '✅ 가입 가능'
-                : '🚨 가입 어려움'
-            }
-            conversational={result.insurance_analysis.conversational}
-            details={result.insurance_analysis.details}
-          />
+          {result.has_insurance_analysis !== false && result.insurance_analysis && (
+            <AnalysisCard
+              title="보증보험 가능성"
+              icon="🛡️"
+              grade={result.insurance_analysis.grade}
+              headline={
+                result.insurance_analysis.eligible
+                  ? '✅ 가입 가능'
+                  : '🚨 가입 어려움'
+              }
+              conversational={result.insurance_analysis.conversational}
+              details={result.insurance_analysis.details}
+            />
+          )}
+
+          {result.has_registry_analysis === false && result.registry_placeholder && (
+            <div className="card border-dashed border-2 border-black/10 bg-black/[0.02]">
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-3">
+                  <span className="text-2xl opacity-60">📜</span>
+                  <h3 className="text-lg font-bold text-subtext">등기부 위험도</h3>
+                </div>
+                <span className="px-3 py-1 rounded-full text-sm font-bold bg-black/5 text-subtext">
+                  {result.registry_placeholder.status === 'no_file'
+                    ? '파일 없음'
+                    : '분석 대기'}
+                </span>
+              </div>
+              <p className="text-text/80 leading-relaxed">
+                {result.registry_placeholder.message}
+              </p>
+            </div>
+          )}
+
+          {result.has_insurance_analysis === false && result.insurance_placeholder && (
+            <div className="card border-dashed border-2 border-black/10 bg-black/[0.02]">
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-3">
+                  <span className="text-2xl opacity-60">🛡️</span>
+                  <h3 className="text-lg font-bold text-subtext">보증보험 가능성</h3>
+                </div>
+                <span className="px-3 py-1 rounded-full text-sm font-bold bg-black/5 text-subtext">
+                  API 미연결
+                </span>
+              </div>
+              <p className="text-text/80 leading-relaxed">
+                {result.insurance_placeholder.message}
+              </p>
+            </div>
+          )}
         </section>
+
+        {/* Real-data badge */}
+        {result.source && (
+          <p className="mt-6 text-xs text-subtext text-center">
+            📡 데이터 출처: {result.source === 'molit_realtime_trade'
+              ? '국토교통부 실거래가 공개시스템 (최근 6개월)'
+              : result.source}
+          </p>
+        )}
+
+        {/* Missing info from backend */}
+        {Array.isArray(result.missing_information) && result.missing_information.length > 0 && (
+          <div className="mt-4 rounded-xl border border-warning/30 bg-warning/5 p-4 text-sm text-text/80">
+            <div className="font-semibold text-warning mb-1">참고 — 다음 정보가 부족했어요</div>
+            <ul className="list-disc pl-5 space-y-0.5">
+              {result.missing_information.map((m, i) => (
+                <li key={i}>{m}</li>
+              ))}
+            </ul>
+          </div>
+        )}
 
         {/* Checklist */}
         <section className="card mt-10">
@@ -202,8 +263,9 @@ export default function Result() {
           )}
         </section>
 
-        <p className="mt-10 text-xs text-subtext text-center">
-          ⚠️ 이 분석은 공공데이터 기반 참고용이에요. 최종 결정은 전문가 상담을 권유해요.
+        <p className="mt-10 text-xs text-subtext text-center leading-relaxed">
+          ⚠️ {result.disclaimer ||
+            '이 분석은 공공데이터 기반 참고용이에요. 최종 결정은 전문가 상담을 권유해요.'}
         </p>
 
         <div className="mt-8 text-center">
